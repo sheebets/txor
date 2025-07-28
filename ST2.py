@@ -346,6 +346,70 @@ if upload_file:
         default=available_bookmakers[:5] if len(available_bookmakers) > 5 else available_bookmakers
     )
     
+    # Apply bookmaker filter to temp data for price range calculation
+    if selected_bookmakers and len(selected_bookmakers) < len(available_bookmakers):
+        temp_filtered_df = temp_filtered_df[temp_filtered_df['BOOKMAKER'].isin(selected_bookmakers)]
+    
+    # PRICES filter (slider range)
+    st.sidebar.subheader('💰 Price Range Filter')
+    
+    # Parse prices to get numeric values for filtering
+    def parse_prices_for_filter(price_str):
+        try:
+            if pd.isna(price_str):
+                return np.nan
+            return float(price_str)
+        except:
+            try:
+                import re
+                numbers = re.findall(r'\d+\.?\d*', str(price_str))
+                if numbers:
+                    return float(numbers[0])
+                return np.nan
+            except:
+                return np.nan
+    
+    # Calculate price range from filtered data
+    temp_filtered_df['PRICES_numeric_temp'] = temp_filtered_df['PRICES'].apply(parse_prices_for_filter)
+    price_data = temp_filtered_df['PRICES_numeric_temp'].dropna()
+    
+    if len(price_data) > 0:
+        min_price = float(price_data.min())
+        max_price = float(price_data.max())
+        
+        # Create price range slider
+        if min_price < max_price:
+            price_range = st.sidebar.slider(
+                '💰 Select Price Range:',
+                min_value=min_price,
+                max_value=max_price,
+                value=(min_price, max_price),
+                step=0.01 if max_price - min_price < 10 else 0.1,
+                format="%.2f"
+            )
+            
+            min_selected_price, max_selected_price = price_range
+            
+            # Display selected price range
+            st.sidebar.success(f"**Selected Range:** {min_selected_price:.2f} - {max_selected_price:.2f}")
+            
+            # Show how many records are in the price range
+            price_filtered_count = len(temp_filtered_df[
+                (temp_filtered_df['PRICES_numeric_temp'] >= min_selected_price) & 
+                (temp_filtered_df['PRICES_numeric_temp'] <= max_selected_price)
+            ])
+            st.sidebar.info(f"📊 Records in price range: **{price_filtered_count:,}** / {len(temp_filtered_df):,}")
+            
+        else:
+            st.sidebar.info(f"💰 Single price value: {min_price:.2f}")
+            price_range = (min_price, max_price)
+            min_selected_price, max_selected_price = price_range
+    else:
+        st.sidebar.warning("⚠️ No valid price data found for filtering")
+        price_range = None
+        min_selected_price = None
+        max_selected_price = None
+    
     # RUN button to apply all filters
     st.sidebar.markdown("---")
     run_analysis = st.sidebar.button("🚀 RUN ANALYSIS", type="primary", use_container_width=True)
@@ -420,6 +484,21 @@ if upload_file:
         before_count = len(filtered_df)
         filtered_df = filtered_df[filtered_df['BOOKMAKER'].isin(selected_bookmakers)]
         st.write(f"🏪 Bookmaker filter applied: {len(filtered_df):,} records match selected bookmakers (reduced from {before_count:,})")
+    
+    # Apply price range filter
+    if price_range and min_selected_price is not None and max_selected_price is not None:
+        # Add numeric prices column to main filtered data
+        filtered_df['PRICES_numeric_temp'] = filtered_df['PRICES'].apply(parse_prices_for_filter)
+        
+        before_count = len(filtered_df)
+        filtered_df = filtered_df[
+            (filtered_df['PRICES_numeric_temp'] >= min_selected_price) & 
+            (filtered_df['PRICES_numeric_temp'] <= max_selected_price)
+        ]
+        st.write(f"💰 Price range filter applied: {len(filtered_df):,} records between {min_selected_price:.2f} - {max_selected_price:.2f} (reduced from {before_count:,})")
+        
+        # Clean up temporary column
+        filtered_df = filtered_df.drop('PRICES_numeric_temp', axis=1)
     
     # Force refresh of filtered data to ensure all subsequent operations use filtered data
     filtered_df = filtered_df.copy()
